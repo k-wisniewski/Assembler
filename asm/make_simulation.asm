@@ -1,10 +1,10 @@
+; This version does not support periodic boundary conditions
 ; registers:
 ;   arguments:
 ;    rdi - int* size
 ;    rsi - Board*** board
 ;    rdx - Board*** copy
 ;   others:
-;    r11 - number of neighbors
 ;
 
 section .data

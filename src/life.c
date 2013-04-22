@@ -16,7 +16,7 @@ void free_board(int *size, Board *board)
     int i;
     if (*board != NULL)
     {
-        for (i = 0; i < size[ROWS]; ++i)
+        for (i = 0; i < (size[ROWS] + 2); ++i)
         {
             if (board[i] != NULL)
             {
@@ -31,18 +31,18 @@ void free_board(int *size, Board *board)
 int alloc_board(int *size, Board *board)
 {
     int i;
-    if ((*board = (Board)malloc(size[ROWS] * sizeof(BoardRow))) == NULL)
+    if ((*board = (Board)malloc((size[ROWS] + 2) * sizeof(BoardRow))) == NULL)
     {
         return 1;
     }
 
-    for (i = 0; i < size[ROWS]; ++i)
+    for (i = 0; i < (size[ROWS] + 2); ++i)
     {
-        if (((*board)[i] = malloc(size[COLS] * sizeof(BoardCell))) == NULL)
+        if (((*board)[i] = malloc((size[COLS] + 2) * sizeof(BoardCell))) == NULL)
         {
             return 1;
         }
-        memset((*board)[i], 0, size[COLS] * sizeof(BoardCell));
+        memset((*board)[i], 0, (size[COLS] + 2) * sizeof(BoardCell));
     }
 }
 
@@ -109,28 +109,32 @@ int alloc_board(int *size, Board *board)
 void play_game(int *size, Board *board, Board *copy, int iterations)
 {
     int i, j, k;
+    long long msec;
+    clock_t start, elapsed_time = 0;
     for (i = 0; i < iterations; i++)
     {
-        printf("iters %d\n", iterations);
+        start = clock();
         make_simulation(size, board, copy);
-        for (j = 0; j < size[ROWS]; j++)
+        elapsed_time += (clock() - start);
+        for (j = 1; j <= size[ROWS]; j++)
         {
-            for(k = 0; k < size[COLS]; k++)
+            for(k = 1; k <= size[COLS]; k++)
             {
                 (*copy)[j][k] = 0;
             }
         }
     }
-
+    msec = elapsed_time * 1000 / CLOCKS_PER_SEC;
+    printf("Time taken %lld seconds %lld milliseconds\n", msec / 1000, msec % 1000);
 }
 
 int save_game(int *size, int iterations, Board board)
 {
     int i, j;
 
-    for (i = 0; i < size[ROWS]; ++i)
+    for (i = 1; i <= size[ROWS]; ++i)
     {
-        for (j = 0; j < size[COLS]; ++j)
+        for (j = 1; j <= size[COLS]; ++j)
         {
             printf("%d", board[i][j]);
         }
@@ -140,14 +144,12 @@ int save_game(int *size, int iterations, Board board)
     return 0;
 }
 
-int load_game(int *size, int *iterations, Board *board, Board *copy)
+int load_game(int *size, Board *board, Board *copy)
 {
     char *buf = NULL;
     int i, j;
     size_t buf_size;
 
-    getline(&buf, &buf_size, stdin);
-    sscanf(buf, "%d\n", iterations);
     getline(&buf, &buf_size, stdin);
     sscanf(buf, "%d\n", &(size[ROWS]));
     getline(&buf, &buf_size, stdin);
@@ -155,9 +157,9 @@ int load_game(int *size, int *iterations, Board *board, Board *copy)
 
     alloc_board(size, board);
     alloc_board(size, copy);
-    for (i = 0; i < size[ROWS]; ++i)
+    for (i = 1; i <= size[ROWS]; ++i)
     {
-        for (j = 0; j < size[COLS]; ++j)
+        for (j = 1; j <= size[COLS]; ++j)
         {
             scanf("%c", &((*board)[i][j]));
             (*board)[i][j] -= '0';
@@ -174,7 +176,7 @@ void print_board(int *size, Board board)
     char col = 1;
 
     printf("  ");
-    for (j = 0; j < size[COLS]; ++j)
+    for (j = 1; j < size[COLS]; ++j)
     {
         printf("%d", col);
         printf(col < 10 ? "_" : "");
@@ -183,10 +185,10 @@ void print_board(int *size, Board board)
 
     printf("\n");
 
-    for (i = 0; i < size[ROWS]; ++i)
+    for (i = 1; i <= size[ROWS]; ++i)
     {
         printf("%c|", row);
-        for (j = 0; j < size[COLS]; ++j)
+        for (j = 1; j <= size[COLS]; ++j)
         {
             printf(board[i][j] ? "x|" : "_|");
         }
@@ -195,14 +197,21 @@ void print_board(int *size, Board board)
     }
 }
 
-int main()
+int main(int argc, char *argv[])
 {
     Board board = NULL;
     Board copy = NULL;
     int size[SIMULATION_DIM];
     int iterations = 0;
+    if (argc < 2)
+    {
+        printf("You must specify number of generations to be calculated!\n");
+        return 1;
+    }
+
+    iterations = atoi(argv[1]);
     memset(size, 0, SIMULATION_DIM * sizeof(int));
-    load_game(size, &iterations, &board, &copy);
+    load_game(size, &board, &copy);
     play_game(size, &board, &copy, iterations);
     save_game(size, iterations, board);
     return 0;
