@@ -3,9 +3,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define SIMULATION_DIM      0x2
-#define ROWS                0x0
-#define COLS                0x1
+#define SIMULATION_DIM 0x2
+#define SSE_WIDTH      0x10
+#define CLOCK_DIV      0x3e8
+#define ROWS           0x0
+#define COLS           0x1
 
 typedef char** Board;
 typedef char*  BoardRow;
@@ -31,18 +33,20 @@ void free_board(int *size, Board *board)
 int alloc_board(int *size, Board *board)
 {
     int i;
+    size_t malloc_width;
     if ((*board = (Board)malloc((size[ROWS] + 2) * sizeof(BoardRow))) == NULL)
     {
         return 1;
     }
 
+    malloc_width = size[COLS] + 1 + SSE_WIDTH;
     for (i = 0; i < (size[ROWS] + 2); ++i)
     {
-        if (((*board)[i] = malloc((size[COLS] + 2) * sizeof(BoardCell))) == NULL)
+        if (((*board)[i] = malloc(malloc_width * sizeof(BoardCell))) == NULL)
         {
             return 1;
         }
-        memset((*board)[i], 0, (size[COLS] + 2) * sizeof(BoardCell));
+        memset((*board)[i], 0, malloc_width * sizeof(BoardCell));
     }
 }
 
@@ -111,21 +115,26 @@ void play_game(int *size, Board *board, Board *copy, int iterations)
     int i, j, k;
     long long msec;
     clock_t start, elapsed_time = 0;
+    size_t malloc_width, malloc_leftover, offset;
+    malloc_width = (1 + size[COLS] + SSE_WIDTH) * sizeof(BoardCell);
+    malloc_leftover = (malloc_width - size[COLS] - 1) * sizeof(BoardCell);
+    offset = (1 + size[COLS]) * sizeof(BoardCell);
     for (i = 0; i < iterations; i++)
     {
         start = clock();
         make_simulation(size, board, copy);
         elapsed_time += (clock() - start);
-        for (j = 1; j <= size[ROWS]; j++)
+        memset((*board)[0], 0, malloc_width);
+        for (j = 0; j <= size[ROWS] + 1; j++)
         {
-            for(k = 1; k <= size[COLS]; k++)
-            {
-                (*copy)[j][k] = 0;
-            }
+            memset((*copy)[j], 0, malloc_width);
+            memset(((*board)[j] + offset), 0, malloc_leftover);
+            (*board)[j][0] = 0;
         }
+        memset((*board)[size[ROWS] + 1], 0, malloc_width);
     }
-    msec = elapsed_time * 1000 / CLOCKS_PER_SEC;
-    printf("Time taken %lld seconds %lld milliseconds\n", msec / 1000, msec % 1000);
+    msec = elapsed_time * CLOCK_DIV / CLOCKS_PER_SEC;
+    printf("Time taken %lld seconds %lld milliseconds\n", msec / CLOCK_DIV, msec % CLOCK_DIV);
 }
 
 int save_game(int *size, int iterations, Board board)
@@ -136,7 +145,7 @@ int save_game(int *size, int iterations, Board board)
     {
         for (j = 1; j <= size[COLS]; ++j)
         {
-            printf("%d", board[i][j]);
+            printf("%hhu", board[i][j]);
         }
         printf("\n");
     }
@@ -154,7 +163,6 @@ int load_game(int *size, Board *board, Board *copy)
     sscanf(buf, "%d\n", &(size[ROWS]));
     getline(&buf, &buf_size, stdin);
     sscanf(buf, "%d\n", &(size[COLS]));
-
     alloc_board(size, board);
     alloc_board(size, copy);
     for (i = 1; i <= size[ROWS]; ++i)

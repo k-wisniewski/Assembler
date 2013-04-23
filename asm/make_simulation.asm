@@ -5,6 +5,14 @@
 ;    rsi - Board*** board
 ;    rdx - Board*** copy
 ;   others:
+;    rax - current row
+;    rbx - current column offset
+;    rcx - temp for SSE masks
+;    r8, r9 - indexes of elements to fetch
+;    r11 - address to load
+;    r12 - address to store
+;    r13 - size[ROW]
+;    r14 - size[COL]
 ;
 
 section .data
@@ -12,6 +20,11 @@ ptr_size:
     db 0x8
 fmt:
     db `>DEBUG: %x\n`, 0
+fmt_1_half:
+    db `>DEBUG: %lld`, 0
+fmt_2_half:
+    db `>DEBUG: %lld\n`, 0
+
 fmt1:
     db `>DEBUG: i %d\n`, 0
 fmt2:
@@ -21,7 +34,7 @@ section .text
     global _make_simulation
     extern _printf
 
-%macro pushallimusing 0
+%macro pusha_used 0
     push rax
     push rbx
     push rcx
@@ -30,21 +43,17 @@ section .text
     push rdi
     push r8
     push r9
-    push r10
     push r11
     push r12
     push r13
     push r14
-    push r15
 %endmacro
 
-%macro popallimusing 0
-    pop r15
+%macro popa_used 0
     pop r14
     pop r13
     pop r12
     pop r11
-    pop r10
     pop r9
     pop r8
     pop rdi
@@ -56,14 +65,14 @@ section .text
 %endmacro
 
 %macro dbg_print 2
-    pushallimusing
+    pusha_used
     sub rsp, 0x8 ; align stack for OS X
     lea rdi, [rel %2]
     mov rsi, %1
     xor rax, rax
     call _printf
     add rsp, 0x8
-    popallimusing
+    popa_used
 %endmacro
 
 %macro save_state 0
@@ -95,75 +104,47 @@ section .text
     mov %1, [rdi + 4]
 %endmacro
 
-%macro get_board_cell 4 ; get_board_cell(Board*, i, j)
-    mov %4, [%1]
-    mov %4, [%4 + %2 * 8]
-    mov %4, [%4 + %3]
-    and %4, 0x1
-%endmacro
-
 %macro write_board_cell 1
     mov r12, [rdx]
     mov r12, [r12 + rax * 8]
     add r12, rbx
-    mov [r12], %1
+    movdqu [r12], %1
 %endmacro
 
-%macro flip_cell 0
-    get_board_cell rsi, rax, rbx, r11
-    cmp r11, 1
-    jne %%.not_dead
-    cmp rcx, 2
-    jl %%.change_cell
-    cmp rcx, 3
-    jg %%.change_cell
-    jmp %%.dont_change
-%%.not_dead:
-    cmp rcx, 3
-    je %%.change_cell
-%%.dont_change:
-    write_board_cell r11
-    jmp %%.done_writing
-%%.change_cell:
-    not r11
-    and r11, 0x1
-    write_board_cell r11
-%%.done_writing:
+%macro load_middle_cell 0
+    mov r11, [rsi]
+    mov r11, [r11 + rax * 8]
+    lddqu xmm9, [r11 + rbx]
 %endmacro
 
-%macro nbr_from 2
+%macro flip_cells 0
+    movaps xmm10, xmm8
+    movaps xmm11, xmm8
+
+;    ;new = (old && sum == 2) || (sum == 3)
+    pcmpeqb xmm10, xmm12
+    pand xmm10, xmm9
+    pcmpeqb xmm11, xmm13
+    por xmm11, xmm10
+    pand xmm11, xmm15
+
+    write_board_cell xmm11
+%endmacro
+
+%macro nbr_from 3
 ; %1 - i
 ; %2 - j
-;    i == -1
     mov r8, rax
     mov r9, rbx
     add r8, %1
-    cmp r8, -1 ; if i == -1
-    jne %%.not_left_most
-    mov r8, r13 ; i = size[ROWS] - 1
-    sub r8, 1
-
-%%.not_left_most:
     add r9, %2
-    cmp r9, -1
-    jne %%.not_top_most
-    mov r9, r14
-    sub r9, 1
 
-%%.not_top_most:
-    cmp r8, r13
-    jne %%.not_right_most
-    xor r8, r8
+    mov r11, [rsi]
+    mov r11, [r11 + r8 * 8]
+    lddqu %3, [r11 + r9]
+ 
+    paddb xmm8, %3
 
-%%.not_right_most:
-    cmp r9, r14
-    jne %%.not_bottom_most
-    xor r9, r9
-
-%%.not_bottom_most:
-    get_board_cell rsi, r8, r9, r11
-    add rcx, r11
-    
 %endmacro
 
 %macro swap_boards 0
@@ -173,40 +154,85 @@ section .text
     mov [rdx], r11
 %endmacro
 
+%macro load_128_bit_consts 0
+    mov rcx, 0x0202020202020202
+    movq xmm12, rcx
+    movlhps xmm12, xmm12
+    mov rcx, 0x0303030303030303
+    movq xmm13, rcx
+    movlhps xmm13, xmm13
+    mov rcx, 0x0101010101010101
+    movq xmm15, rcx
+    movlhps xmm15, xmm15
+%endmacro
+
+%macro first_iteration 0
+    xorps xmm8, xmm8 ; no_of_nbrs = 0
+    nbr_from 0, (-1), xmm3
+    nbr_from 0, 1, xmm4
+    nbr_from 1, (-1), xmm5
+    nbr_from 1, 1, xmm7
+    nbr_from 1, 0, xmm6
+    nbr_from (-1), (-1), xmm0
+    nbr_from (-1), 0, xmm1
+    nbr_from (-1), 1, xmm2
+    load_middle_cell
+    flip_cells
+%endmacro
+
+%macro recycle_registers 0
+    xorps xmm8, xmm8 ; no_of_nbrs = 0
+    movaps xmm0, xmm3
+    paddb xmm8, xmm0
+    movaps xmm1, xmm9
+    paddb xmm8, xmm1
+    movaps xmm2, xmm4
+    paddb xmm8, xmm2
+    movaps xmm3, xmm5
+    paddb xmm8, xmm3
+    movaps xmm4, xmm7
+    paddb xmm8, xmm4
+    movaps xmm9, xmm6
+%endmacro
+
 
 _make_simulation:
     save_state
-    xor rax, rax ; i = 0
+
+    load_128_bit_consts
+
+    mov rbx, 1; j = 1
 
     getsize_row r13d
     getsize_col r14d
-    jmp .for_row_test
-.for_row:
-    xor rbx, rbx ; j = 0
+
     jmp .for_col_test
+
 .for_col:
-    xor rcx, rcx
-   ; no_of_nbrs = 0
-    nbr_from (-1), (-1)
-    nbr_from (-1), 0
-    nbr_from (-1), 1
-    nbr_from 0, (-1)
-    nbr_from 0, 1
-    nbr_from 1, (-1)
-    nbr_from 1, 0
-    nbr_from 1, 1
-    flip_cell
-
-    inc rbx
-.for_col_test:
-    cmp rbx, r14
-    jl .for_col
-
+    mov rax, 1; i = 1
+    first_iteration
     inc rax
+    jmp .for_row_test
+
+.for_row:
+    recycle_registers
+    ; bottom row needs to be fetched
+    nbr_from 1, (-1), xmm5
+    nbr_from 1, 0, xmm6
+    nbr_from 1, 1, xmm7
+    flip_cells   
+    inc rax
+
 .for_row_test:
     cmp rax, r13
-    jl .for_row
-   
+    jle .for_row
+
+    add rbx, 16
+.for_col_test:
+    cmp rbx, r14
+    jle .for_col
+
+.after_main_loop:
     swap_boards
 
     mov r8, [rsi]
