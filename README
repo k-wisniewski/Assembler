@@ -1,0 +1,22 @@
+Wprawka w asemblerze - gra w życie
+
+Kompilacja:
+make - kompiluje wersję bez SSE z włączonymi timerami, plansza wypisywana raz, na koniec symulacji
+make sse - kompiluje wersję z SSE i z włączonymi timerami, plansza wypisywana raz, na koniec symulacji
+Aby wypisywać każdą klatkę symulacji trzeba do polecenia kompilacji dodać OPTIONS=-DPRINT_FRAME, wówczas
+czas nie jest mierzony a przerwa między klatkami wynosi 2 sekundy.
+Jeśli jest skompilowana wersja bez/z SSE należy przed skompilowaniem wersji z/bez SSE wykonać make clean,
+by zapewnić, że plik life.c zostanei przekompilowany.
+
+Uruchamianie:
+bin/life <liczba iteracji> < <wejście>
+Plansze powinny mieć wymiary 50x60, w razie czego trzeba zmienić BOARD_WIDTH i BOARD HEIGHT w life.c i w
+plikach assemblerowych wartości ladowane do rejestrów r13d/r14d
+
+A toy Game of Life simulation in Assembler
+
+Compilation:
+make - compiles non-SSE version with timers on, the board is written once - at the end of simulation
+make sse - compiles SSE version with timers on, board is written once - at the end of simulation
+
+To view every frame of simulation, add OPTIONS=-DPRINT_FRAME which disables timers and every frame is visible for 2s. You have to make clean in order to see changes.
